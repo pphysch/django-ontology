@@ -1,0 +1,19 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1"/>
+        <title>Django Entity Framework</title>
+        <script src="{% static 'js/htmx.min.js' %}" defer></script>
+        <style>
+            .comment {
+                margin: 1em;
+            }
+        </style>
+    </head>
+    <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+        {% block content %}
+        This pepe is blank.
+        <img alt="hi" src="https://api.time.com/wp-content/uploads/2016/10/pepe-the-frog-matt-furie-hate-symbol-racism-anti-defamation-league-4chan.jpg?quality=85&w=800"></img>
+        {% endblock %}
+    </body>
+</html>
