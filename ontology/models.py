@@ -305,7 +305,7 @@ class Note(models.Model):
         related_name = "notes",
     )
     author = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+        "ontology.Entity",
         on_delete=models.CASCADE,
         related_name = "comments",
     )
