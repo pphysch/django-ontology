@@ -1,0 +1,4 @@
+django
+networkx
+pytest
+pytest-django
