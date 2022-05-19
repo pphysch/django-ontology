@@ -1,6 +1,4 @@
 from django.test import TestCase
+from . import models
 
 # Create your tests here.
-
-def test_example(db):
-    assert True

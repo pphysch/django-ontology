@@ -89,7 +89,7 @@ def on_permission_save(instance: Permission, **kwargs):
             follower = peers[1]
             if follower.deny == instance.deny:
                 instance.is_synced = follower.is_synced
-                instance.last_sync_attempt_at = follower.last_sync_attempt_at
+                instance.last_sync_attempt_time = follower.last_sync_attempt_time
             else:
                 instance.sync()
         else:
@@ -104,7 +104,7 @@ def on_permission_delete(instance: Permission, **kwargs):
         # The incumbent is the Permission replacing the instance
         if instance.deny == incumbent.deny:
             incumbent.is_synced = instance.is_synced
-            incumbent.last_sync_attempt_at = instance.last_sync_attempt_at
+            incumbent.last_sync_attempt_time = instance.last_sync_attempt_time
         else:
             incumbent.sync()
     else:

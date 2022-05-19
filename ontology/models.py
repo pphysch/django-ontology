@@ -23,8 +23,15 @@ class EntityModel(models.Model):
             return super().get_queryset().filter(deleted_time__isnull=True)
 
     class QuerySet(models.QuerySet):
-        def with_tag(self, key, value):
-            return self.filter(entity__tags__key=key, entity__tags__value=value)
+        def with_tag(self, tag: "Tag"):
+            """
+            Include only entities with the specified Tag.
+
+            `tag` may be a string of the form `"key:value"`.
+            """
+            if isinstance(tag, str):
+                tag = Tag.objects.from_string(tag)
+            return self.filter(entity__tags=tag)
 
     objects = Manager.from_queryset(QuerySet)()
     objects_archive = ArchiveManager.from_queryset(QuerySet)()
@@ -177,6 +184,16 @@ class Entity(models.Model):
         verbose_name_plural = "entities"
 
     class QuerySet(models.QuerySet):
+        def with_tag(self, tag: "Tag"):
+            """
+            Include only entities with the specified Tag.
+
+            `tag` may be a string of the form `"key:value"`.
+            """
+            if isinstance(tag, str):
+                tag = Tag.objects.from_string(tag)
+            return self.filter(tags=tag)
+
         def as_objects(self):
             """
             Returns a dictionary mapping ContentTypes to sets of objects of that type.
@@ -510,7 +527,7 @@ class Permission(models.Model):
         default=False,
         editable=False,
     )
-    last_sync_attempt_at = models.DateTimeField(
+    last_sync_attempt_time = models.DateTimeField(
         default=None,
         null=True,
         editable=False,

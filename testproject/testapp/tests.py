@@ -83,6 +83,9 @@ def test_entities_as_objects(db, people):
 def test_basic_policy(db, people, bank_policy):
     bank_account = bank_policy["account"]
 
+    faketag = ontology_models.Tag.objects.get(key="role", value="janitor")
+    assert models.Person.objects.filter(entity__tags=faketag).count() == 1
+
     # The account manager can access the account, but the janitor cannot
     assert people["alice"].has_permission("access", bank_account) == True
     assert people["bob"].has_permission("access", bank_account) == False
