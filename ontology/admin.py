@@ -19,7 +19,7 @@ class EntityAdminInline(GenericStackedInline):
     readonly_fields = ['id', 'created_time', 'updated_time', 'deleted_time']
     fieldsets = (
         (None, {
-            "fields": ('notes', 'tags', 'contacts')
+            "fields": ('notes', 'tags')
         }),
         ("Timestamps", {
             "fields": ('created_time', 'updated_time', 'deleted_time'),

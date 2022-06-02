@@ -4,7 +4,6 @@ from django.db import transaction
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
-from django.contrib import admin
 import networkx
 import collections
 
@@ -218,11 +217,6 @@ class Entity(models.Model):
     notes = models.TextField(
         blank=True,
         null=True,
-    )
-    contacts = models.ManyToManyField(
-        settings.AUTH_USER_MODEL,
-        blank=True,
-        related_name="listed_as_contact",
     )
     tags = models.ManyToManyField(
         "ontology.Tag",
