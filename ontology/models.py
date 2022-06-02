@@ -222,6 +222,7 @@ class Entity(models.Model):
     contacts = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
+        related_name="listed_as_contact",
     )
     tags = models.ManyToManyField(
         "ontology.Tag",
