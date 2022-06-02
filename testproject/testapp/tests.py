@@ -1,4 +1,3 @@
-from django.test import TestCase
 import ontology.models as ontology_models
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
@@ -38,23 +37,6 @@ def people(db, places):
         "chris": chris,
     }
 
-@pytest.fixture
-def bank_policy(db, people):
-    tag_manager = people["alice"].add_tag("role:account_manager")
-    tag_janitor = people["bob"].add_tag("role:janitor")
-
-    ba = models.Thing.objects.create(slug="bank_account")
-    tag_restricted = ba.add_tag("access:restricted")
-
-    action_access_account = ontology_models.Action.objects.from_objects(people["alice"], "access", ba, may_create=True)
-
-    policy = ontology_models.Policy.objects.create(name="Bank account access policy", description="Allow account managers to access restricted accounts")
-    policy.subject_tags.add(tag_manager)
-    policy.actions.add(action_access_account)
-    policy.target_tags.add(tag_restricted)
-
-    return {"policy": policy, "account": ba}
-
 
 def test_fixtures(db, people):
     assert models.Person.objects.count() == 3
@@ -78,27 +60,3 @@ def test_entities_as_objects(db, people):
     assert len(objects) == 2  # Two different ContentTypes, Person and Place
     assert len(objects[ct_person]) == 3  # Three people
     assert people["alice"] in objects[ct_person]
-
-
-def test_basic_policy(db, people, bank_policy):
-    bank_account = bank_policy["account"]
-
-    faketag = ontology_models.Tag.objects.get(key="role", value="janitor")
-    assert models.Person.objects.filter(entity__tags=faketag).count() == 1
-
-    # The account manager can access the account, but the janitor cannot
-    assert people["alice"].has_permission("access", bank_account) == True
-    assert people["bob"].has_permission("access", bank_account) == False
-
-    # Alice retires from the bank and loses account access
-    people["alice"].remove_tag("role:account_manager")
-    assert people["alice"].has_permission("access", bank_account) == False
-
-    # Bob is promoted to account manager and gains access
-    people["bob"].add_tag("role:account_manager")
-    assert people["bob"].has_permission("access", bank_account) == True
-
-    # The bank closes down and terminates account access
-    bank_policy["policy"].expiration_time = timezone.now()
-    bank_policy["policy"].save()
-    assert people["bob"].has_permission("access", bank_account) == False

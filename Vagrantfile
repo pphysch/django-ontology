@@ -11,6 +11,7 @@ Vagrant.configure("2") do |config|
     config.vm.define "ontology-dev" do |django|
         django.vm.synced_folder ".", "/opt/django"#, mount_options: ["ro"]
         django.vm.network "forwarded_port", guest: 8080, host: 8080
+        django.vm.network "forwarded_port", guest: 8888, host: 8888
         #django.vm.network "forwarded_port", guest: 443, host: 8443
 
         #django.vm.provision "ansible" do |ansible|

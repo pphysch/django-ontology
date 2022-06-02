@@ -17,11 +17,13 @@ class Person(EntityModel):
 
     items = models.ManyToManyField(
         "Thing",
+        blank=True,
     )
 
     friends = models.ManyToManyField(
         "self",
         symmetrical=False,
+        blank=True,
     )
 
     def __str__(self):
@@ -35,10 +37,19 @@ class Place(EntityModel):
         "self",
         null=True,
         on_delete=models.SET_NULL,
+        blank=True,
     )
 
     def __str__(self):
         return self.slug
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(entity=models.F('parent')),
+                name="no_self_parent",
+            )
+        ]
 
 
 class Thing(EntityModel):
