@@ -39,8 +39,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django_extensions',
     'ontology',
+    'ontology_auth',
     'testproject.testapp',
 ]
+
+AUTH_USER_MODEL = "ontology_auth.User"
 
 NOTEBOOK_ARGUMENTS = [
     '--ip', '0.0.0.0',
@@ -54,6 +57,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "ontology_auth.backends.DomainAuthorizationBackend",
 ]
 
 ROOT_URLCONF = 'testproject.urls'

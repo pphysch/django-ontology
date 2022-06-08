@@ -1,13 +1,17 @@
+import logging
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models
 from django.db import transaction
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
+from django.dispatch import receiver
 import networkx
 import collections
 
 # Create your models here.
+
+logger = logging.getLogger(__name__)
 
 class EntityModel(models.Model):
     """
@@ -28,18 +32,14 @@ class EntityModel(models.Model):
 
     class Manager(ArchiveManager):
         def get_queryset(self):
-            return super().get_queryset().filter(entity__deleted_time__isnull=True)
+            return super().get_queryset().filter(deleted=False)
 
     class QuerySet(models.QuerySet):
-        def with_tag(self, tag: "Tag"):
+        def with_attr(self, domain, key, value):
             """
-            Include only entities with the specified Tag.
-
-            `tag` may be a string of the form `"key:value"`.
+            Include only entities with the specified Attribute.
             """
-            if isinstance(tag, str):
-                tag = Tag.objects.from_string(tag)
-            return self.filter(entity__tags=tag)
+            return self.filter(entity__attrs__domain=domain, entity__attrs__key=key, entity__attrs__value=value)
 
     objects = Manager.from_queryset(QuerySet)()
     objects_archive = ArchiveManager.from_queryset(QuerySet)()
@@ -50,52 +50,95 @@ class EntityModel(models.Model):
         primary_key=True,
         editable=False,
     )
+    deleted = models.BooleanField(
+        default=False,
+        editable=False,
+        db_index=True,
+        help_text="True indicates the object has been soft-deleted and won't appear in most queries."
+    )
 
-    def add_tag(self, tag: "Tag") -> "Tag":
+    def add_to_domain(self, domain):
         """
-        Add the tag to this object.
-
-        `tag` may be a string of the form `"key:value"`.
+        Add this object to the specified domain.
         """
-        if isinstance(tag, str):
-            tag = Tag.objects.from_string(tag)
+        if isinstance(domain, str):
+            domain, _ = Domain.objects.get_or_create(slug=domain)
+        return domain.entities.add(self.entity)
 
-        self.entity.tags.add(tag)
-        return tag
-
-    def has_tag(self, tag: "Tag") -> bool:
+    def is_in_domain(self, domain, recursive=False):
         """
-        Check if this object has the tag.
+        Check whether this object is in the specified domain.
 
-        `tag` may be a string of the form `"key:value"`.
+        If `recursive=True`, recursively check all subdomains.
         """
-        if isinstance(tag, str):
+        if isinstance(domain, str):
             try:
-                tag = Tag.objects.from_string(tag, may_create=False)
-            except Tag.DoesNotExist:
+                domain = Domain.objects.get(slug=domain)
+            except Domain.DoesNotExist:
                 return False
 
-        return self.entity.tags.filter(pk=tag.pk).exists()
+        if recursive:
+            for subdomain in self.entity.domains.all():
+                if domain.has_subdomain_recursive(subdomain):
+                    return True
 
-    def remove_tag(self, tag: "Tag") -> None:
-        """
-        Remove the tag from this object.
+        return domain.entities.filter(id=self.entity_id).exists()
 
-        `tag` may be a string of the form `"key:value"`.
+    def remove_from_domain(self, domain):
         """
-        if isinstance(tag, str):
+        Remove this object to the specified domain, and delete all attributes associated with that domain.
+        """
+        if isinstance(domain, str):
             try:
-                tag = Tag.objects.from_string(tag, may_create=False)
-            except Tag.DoesNotExist:
+                domain = Domain.objects.get(slug=domain)
+            except Domain.DoesNotExist:
                 return
+        with transaction.atomic():
+            self.entity.attrs.remove(*self.entity.attrs.filter(domain=domain))
+            return domain.entities.remove(self.entity)
 
-        return self.entity.tags.remove(tag)
+    def add_attr(self, domain, key, value) -> "Attribute":
+        """
+        Add the attribute to this object.
+        """
+        if domain != None:
+            if isinstance(domain, str):
+                domain = Domain.objects.get(slug=domain)
+            
+            if not self.is_in_domain(domain):
+                raise ValueError("cannot assign domain attributes unless the object is part of that domain.")
 
-    def tags_with_key(self, key):
+        attr, _ = Attribute.objects.get_or_create(domain=domain, key=key, value=value)
+        self.entity.attrs.add(attr)
+        return attr
+
+    def has_attr(self, domain, key, value) -> bool:
         """
-        Return a QuerySet of tags on this object with the specified key.
+        Check if this object has the attribute.
         """
-        return self.entity.tags.filter(key=key)
+        if isinstance(domain, str):
+            domain = Domain.objects.get(slug=domain)
+
+        return self.entity.attrs.filter(domain=domain, key=key, value=value).exists()
+
+    def remove_attr(self, domain, key, value) -> None:
+        """
+        Remove the attribute from this object.
+        """
+        try:
+            if isinstance(domain, str):
+                domain = Domain.objects.get(slug=domain)
+            attr = Attribute.objects.get(domain=domain, key=key, value=value)
+        except Attribute.DoesNotExist:
+            return
+
+        return self.entity.attrs.remove(attr)
+
+    def attrs_with_key(self, domain, key):
+        """
+        Return a QuerySet of attributes on this object with the specified key.
+        """
+        return self.entity.attrs.filter(key=key, domain=domain)
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
@@ -119,15 +162,20 @@ class Entity(models.Model):
             return super().get_queryset().filter(deleted_time__isnull=True)
 
     class QuerySet(models.QuerySet):
-        def with_tag(self, tag: "Tag"):
+        def all_subdomains(self):
             """
-            Include only entities with the specified Tag.
+            Recursively replace all Domain entities in the QuerySet with their constituent entities.
+            """
+            qs = super().all()
+            domain_ct = ContentType.objects.get_for_model(Domain)
+            subdomains = qs.filter(content_type=domain_ct)
+            return qs.exclude(content_type=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
 
-            `tag` may be a string of the form `"key:value"`.
+        def with_attr(self, key, value, domain=None):
             """
-            if isinstance(tag, str):
-                tag = Tag.objects.from_string(tag)
-            return self.filter(tags=tag)
+            Include only entities with the specified Attribute.
+            """
+            return self.filter(attrs__domain=domain, attrs__key=key, attrs__value=value)
 
         def as_objects(self):
             """
@@ -218,15 +266,19 @@ class Entity(models.Model):
         blank=True,
         null=True,
     )
-    tags = models.ManyToManyField(
-        "ontology.Tag",
+    attrs = models.ManyToManyField(
+        "ontology.Attribute",
+        verbose_name="attributes",
         blank=True,
+        related_name="entities",
     )
 
     def delete(self, hard_delete=False, *args, **kwargs):
         if hard_delete:
             return super().delete(*args, **kwargs)
         elif self.deleted_time != None:
+            self.object.deleted = True
+            self.object.save()
             self.deleted_time = timezone.now()
             return self.save()
         else:
@@ -235,45 +287,94 @@ class Entity(models.Model):
     def __str__(self):
         return f"{self.content_type} | {self.object}"
 
-class Tag(models.Model):
+class Domain(EntityModel):
     """
-    A tag composed of a key-value text pair.
+    A set of Entities, which is itself an Entity.
+    """
+    slug = models.SlugField(unique=True)
+    entities = models.ManyToManyField(
+        Entity,
+        related_name="domains",
+        through="Domain_Entities"
+    )
 
-    Use keys for domains or namespaces, and values for the actual "tag".
+    def superdomains(self):
+        return Domain.objects.filter(pk__in=self.entity.domains.all())
 
-    Examples:
-     - "state":"utah"
-     - "organization_type":"university"
-     - "incident-83526371":"investigate"
-     - "__subapp__tags":"foobar"
+    def subdomains(self):
+        return Domain.objects.filter(pk__in=self.entities.filter(content_type=ContentType.objects.get_for_model(Domain)))
+
+    def has_subdomain_recursive(self, subdomain):
+        """
+        Returns True if `subdomain` is a subdomain of this domain or any of its subdomains, recursively.
+        """
+        if subdomain == self:
+            return True
+
+        for domain in self.subdomains():
+            if domain.has_subdomain_recursive(subdomain):
+                return True
+
+        return False
+
+    def __str__(self):
+        return self.slug
+
+class Domain_Entities(models.Model):
+    """
+    M2M `through` model for Domain.entities
+    """
+    domain = models.ForeignKey(
+        Domain,
+        on_delete=models.CASCADE,
+    )
+    entity = models.ForeignKey(
+        Entity,
+        on_delete=models.CASCADE,
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(domain_id=models.F("entity_id")),
+                name="%(app_label)s_%(class)s_no_self_reference"
+            )
+        ]
+
+@receiver(models.signals.m2m_changed, sender=Domain_Entities)
+def on_domain_entities_m2m_changed(action, instance, pk_set, **kwargs):
+    """
+    Prevent cycles from forming in the domain graph.
+    """
+    if action == "pre_add":
+        for domain in Domain.objects.filter(pk__in=pk_set):
+            if domain.has_subdomain_recursive(instance):
+                raise IntegrityError("cycle detected in domain graph!")
+
+
+class Attribute(models.Model):
+    """
+    An attribute composed as a set-key-value triple.
     """
 
-    class Manager(models.Manager):
-        def from_string(self, tag_string: str, may_create=True) -> "Tag":
-            tokens = tag_string.split(":")
-            if len(tokens) < 2:
-                raise ValueError("tag_string must be in the format 'key:value'")
-            key = tokens[0]
-            value = ":".join(tokens[1:])
-            if may_create:
-                tag, created = self.get_or_create(key=key, value=value)
-            else:
-                tag = self.get(key=key, value=value)
-            return tag
-
-    objects = Manager()
-
+    domain = models.ForeignKey(
+        Domain,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+    )
     key = models.SlugField()
     value = models.CharField(max_length=255)
 
     def __str__(self):
-        return f"{self.key}:{self.value}"
+        _domain = f"[{self.domain}] " if self.domain else ""
+        return f"{_domain}{self.key}:{self.value}"
 
     class Meta:
         indexes = [
-            models.Index(fields=["key", "value"])
+            models.Index(fields=["domain", "key", "value"])
         ]
         constraints = [
-            models.UniqueConstraint(fields=["key", "value"], name="%(app_label)s_%(class)s_unique_kv")
+            models.UniqueConstraint(fields=["key", "value", "domain"], name="%(app_label)s_%(class)s_unique")
         ]
 

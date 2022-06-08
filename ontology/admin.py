@@ -15,11 +15,11 @@ class EntityAdminInline(GenericStackedInline):
     model = models.Entity
     ct_fk_field = "id"
     extra = 0
-    autocomplete_fields = ["contacts", "tags"]
+    autocomplete_fields = ["contacts", "attrs"]
     readonly_fields = ['id', 'created_time', 'updated_time', 'deleted_time']
     fieldsets = (
         (None, {
-            "fields": ('notes', 'tags')
+            "fields": ('notes', 'attrs')
         }),
         ("Timestamps", {
             "fields": ('created_time', 'updated_time', 'deleted_time'),
@@ -33,6 +33,10 @@ class EntityAdminInline(GenericStackedInline):
     def has_delete_permission(self, request, obj=None):
         return False
 
-@admin.register(models.Tag)
-class TagAdmin(admin.ModelAdmin):
+@admin.register(models.Attribute)
+class AttributeAdmin(admin.ModelAdmin):
     search_fields = ["key", "value"]
+
+@admin.register(models.Domain)
+class DomainAdmin(EntityModelAdmin):
+    pass

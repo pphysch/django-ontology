@@ -57,3 +57,6 @@ class Thing(EntityModel):
 
     def __str__(self):
         return self.slug
+
+    class Meta:
+        permissions = [('can_use_thing', 'Can use thing')]
