@@ -26,5 +26,5 @@ class DomainAuthorizationBackend(BaseBackend):
             target=target,
             permission__codename=codename,
             permission__content_type__app_label=app_label,
-            policy__active=True,
+            policy__disabled=False,
             ).exists()

@@ -75,9 +75,9 @@ class Policy(models.Model):
         related_name="policies_as_target",
         help_text="Objects must have all attributes to be included in this policy."
     )
-    active = models.BooleanField(
-        default=True,
-        help_text="When this policy is inactive, it will not be considered when checking permissions."
+    disabled = models.BooleanField(
+        default=False,
+        help_text="When this policy is disabled, it will not be considered when checking permissions."
     )
 
     def sources(self):

@@ -177,22 +177,23 @@ class Entity(models.Model):
             """
             return self.filter(attrs__domain=domain, attrs__key=key, attrs__value=value)
 
-        def as_objects(self):
+        def by_model(self, *models: models.Model):
             """
-            Returns a dictionary mapping ContentTypes to sets of objects of that type.
+            Returns a dictionary mapping Models to querysets of objects of that type.
 
-            >>> Entity.objects.all().as_objects()
+            Example:
+            >>> Entity.objects.filter(...).by_model(User, Region, ...)
             {
-                <ContentType: auth | user>: {<User: alice>, <User: bob>, ...},
-                <ContentType: gis | region>: {<Region: fredonia>, ...},
+                User: {<User: alice>, <User: bob>, ...},
+                Region: {<Region: fredonia>, ...},
                 ...
             }
             """
-            result = collections.defaultdict(set)
-            for entity in self.order_by('content_type'):
-                ct = entity.content_type
-                result[ct].add(entity.object)
-            return result
+            results = dict()
+            for model in models:
+                ct = ContentType.objects.get_for_model(model)
+                results[model] = model.objects.filter(entity__in=self.filter(content_type=ct))
+            return results
 
         def as_graph(self) -> networkx.MultiDiGraph:
             """
@@ -354,7 +355,7 @@ def on_domain_entities_m2m_changed(action, instance, pk_set, **kwargs):
 
 class Attribute(models.Model):
     """
-    An attribute composed as a set-key-value triple.
+    An attribute composed as a domain-key-value triple.
     """
 
     domain = models.ForeignKey(
