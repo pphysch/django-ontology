@@ -41,6 +41,24 @@ class EntityModel(models.Model):
             """
             return self.filter(entity__attrs__domain=domain, entity__attrs__key=key, entity__attrs__value=value)
 
+        def delete(self, hard_delete=False):
+            if hard_delete:
+                Entity.objects_archive.filter(pk__in=self).delete(hard_delete=hard_delete)
+                return super().delete()
+            else:
+                self.update(deleted=True)
+                Entity.objects_archive.filter(pk__in=self).update(deleted_time=timezone.now())
+
+        def undelete(self):
+            """
+            Reverses the soft-deletion of objects in the queryset.
+            
+            Note that the default `objects` manager won't select soft-deleted objects, so make sure to use the `objects_archive` manager instead.
+            """
+            with transaction.atomic():
+                self.update(deleted=False)
+                Entity.objects_archive.filter(pk__in=self).update(deleted_time=None)
+
     objects = Manager.from_queryset(QuerySet)()
     objects_archive = ArchiveManager.from_queryset(QuerySet)()
 
@@ -147,6 +165,7 @@ class EntityModel(models.Model):
             return super().save(*args, **kwargs)
 
     def delete(self, hard_delete=False, *args, **kwargs):
+        self.deleted = True
         return self.entity.delete(hard_delete=hard_delete)
 
 
@@ -162,20 +181,18 @@ class Entity(models.Model):
             return super().get_queryset().filter(deleted_time__isnull=True)
 
     class QuerySet(models.QuerySet):
-        def all_subdomains(self):
-            """
-            Recursively replace all Domain entities in the QuerySet with their constituent entities.
-            """
-            qs = super().all()
-            domain_ct = ContentType.objects.get_for_model(Domain)
-            subdomains = qs.filter(content_type=domain_ct)
-            return qs.exclude(content_type=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
-
         def with_attr(self, key, value, domain=None):
             """
             Include only entities with the specified Attribute.
             """
             return self.filter(attrs__domain=domain, attrs__key=key, attrs__value=value)
+
+        def delete(self, hard_delete=False):
+            if hard_delete:
+                return super().delete()
+            else:
+                for entity in self:
+                    entity.delete(hard_delete=hard_delete)
 
         def by_model(self, *models: models.Model):
             """
@@ -190,10 +207,23 @@ class Entity(models.Model):
             }
             """
             results = dict()
+            if not models:
+                models = {ct.model_class() for ct in ContentType.objects.filter(pk__in=self.values_list("content_type", flat=True).distinct())}
             for model in models:
                 ct = ContentType.objects.get_for_model(model)
                 results[model] = model.objects.filter(entity__in=self.filter(content_type=ct))
             return results
+
+
+        def all_subdomains(self):
+            """
+            Recursively replace all Domain entities in the QuerySet with their constituent entities.
+            """
+            qs = super().all()
+            domain_ct = ContentType.objects.get_for_model(Domain)
+            subdomains = qs.filter(content_type=domain_ct)
+            return qs.exclude(content_type=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
+
 
         def as_graph(self) -> networkx.MultiDiGraph:
             """
@@ -277,7 +307,7 @@ class Entity(models.Model):
     def delete(self, hard_delete=False, *args, **kwargs):
         if hard_delete:
             return super().delete(*args, **kwargs)
-        elif self.deleted_time != None:
+        elif self.deleted_time == None:
             self.object.deleted = True
             self.object.save()
             self.deleted_time = timezone.now()

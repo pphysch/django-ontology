@@ -74,6 +74,26 @@ def narrow_policy(db, domain):
 def test_fixtures(db, people):
     assert models.Person.objects.count() == 3
 
+def test_entity_lifecycle(db, thing):
+    assert thing in models.Thing.objects.all()
+
+    thing.delete()
+    assert thing in models.Thing.objects_archive.all()
+    assert thing not in models.Thing.objects.all()
+
+    models.Thing.objects_archive.undelete()
+    assert thing in models.Thing.objects.all()
+
+    models.Thing.objects.delete()
+    assert thing in models.Thing.objects_archive.all()
+    assert thing not in models.Thing.objects.all()
+
+    models.Thing.objects_archive.delete(hard_delete=True)
+    assert thing not in models.Thing.objects_archive.all()
+
+    with pytest.raises(ontology_models.Entity.DoesNotExist):
+        ontology_models.Entity.objects_archive.get(pk=thing.entity_id)
+
 
 def test_attributes(db, domain, people):
     alice, bob = people["alice"], people["bob"]
@@ -136,13 +156,12 @@ def test_entities_as_graph(db, people, places):
     assert nx.shortest_path(graph, source=people["alice"], target=people["bob"]) == [people["alice"], people["chris"], people["bob"]]
 
 
-def test_entities_as_objects(db, people):
+def test_entities_by_model(db, people):
     alice = people["alice"]
-    objects = ontology_models.Entity.objects.as_objects()
-    ct_person = ContentType.objects.get_for_model(models.Person)
+    objects = ontology_models.Entity.objects.by_model()
     assert len(objects) == 2  # Two different ContentTypes, Person and Place
-    assert len(objects[ct_person]) == 3  # Three people
-    assert alice in objects[ct_person]
+    assert len(objects[models.Person]) == 3  # Three people
+    assert alice in objects[models.Person]
 
 
 def test_simple_policy(db, user, broad_policy, thing):
