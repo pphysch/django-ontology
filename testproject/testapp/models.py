@@ -1,9 +1,9 @@
 from django.db import models
-from ontology.models import EntityModel
+from ontology.models import ComponentModel
 
 # Create your models here.
 
-class Person(EntityModel):
+class Person(ComponentModel):
     class Meta:
         verbose_name_plural = "people"
 
@@ -30,7 +30,7 @@ class Person(EntityModel):
         return self.slug
 
 
-class Place(EntityModel):
+class Place(ComponentModel):
     slug = models.SlugField(unique=True)
 
     parent = models.ForeignKey(
@@ -52,7 +52,7 @@ class Place(EntityModel):
         ]
 
 
-class Thing(EntityModel):
+class Thing(ComponentModel):
     slug = models.SlugField(unique=True)
 
     def __str__(self):

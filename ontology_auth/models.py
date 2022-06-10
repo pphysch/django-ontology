@@ -1,11 +1,11 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import AbstractUser, Permission
-from ontology.models import EntityModel, Entity, Domain, Attribute
+from django.contrib.auth.models import AbstractUser, Permission, UserManager
+from ontology.models import ComponentModel, Entity, Domain, Attribute
 from django.db import transaction
 
-class User(AbstractUser, EntityModel):
+class User(ComponentModel, AbstractUser):
     pass
 
 
@@ -81,8 +81,8 @@ class Policy(models.Model):
     )
 
     def sources(self):
-        # For now, sources are only Users, but in theory they could be any EntityModel
-        qs = self.domain.entities.filter(content_type=ContentType.objects.get_for_model(get_user_model()))
+        # For now, sources are only Users, but in theory they could be any ComponentModel
+        qs = self.domain.entities.filter(content_types=ContentType.objects.get_for_model(get_user_model()))
         for attr in self.source_attrs.all():
             qs = qs.filter(attrs=attr)
         return qs
@@ -124,7 +124,7 @@ class Policy(models.Model):
         if len(references) == 0:
             # If there are no Entitlements to extrude, we have to do a bit more work.
             for target in self.targets():
-                for permission in self.allow_permissions.filter(content_type=target.content_type):
+                for permission in self.allow_permissions.filter(content_type__in=target.content_types.all()):
                     new_entitlements.append(
                         Entitlement(
                             policy=self,
@@ -149,7 +149,7 @@ class Policy(models.Model):
         Efficiently specifies the entitlements that should be created when an Entity is added as a target to a policy.
         """
         new_entitlements = []
-        references = self.entitlements.filter(permission__content_type=target.content_type).values("permission_id", "source_id").distinct()
+        references = self.entitlements.filter(permission__content_type__in=target.content_types.all()).values("permission_id", "source_id").distinct()
         if len(references) == 0:
             # If there are no Entitlements to extrude, we have to do a bit more work.
             for source in self.sources():

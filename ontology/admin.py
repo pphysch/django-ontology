@@ -4,7 +4,7 @@ from . import models
 
 # Register your models here.
 
-class EntityModelAdmin(admin.ModelAdmin):
+class ComponentModelAdmin(admin.ModelAdmin):
     def get_inlines(self, request, obj):
         inlines = super().get_inlines(request, obj=obj)
         if EntityAdminInline not in inlines:
@@ -38,5 +38,5 @@ class AttributeAdmin(admin.ModelAdmin):
     search_fields = ["key", "value"]
 
 @admin.register(models.Domain)
-class DomainAdmin(EntityModelAdmin):
+class DomainAdmin(ComponentModelAdmin):
     pass

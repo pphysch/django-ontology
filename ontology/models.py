@@ -1,3 +1,4 @@
+from functools import cached_property
 import logging
 from django.conf import settings
 from django.db import IntegrityError, models
@@ -6,23 +7,21 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
 from django.dispatch import receiver
-import networkx
-import collections
 
 # Create your models here.
 
 logger = logging.getLogger(__name__)
 
-class EntityModel(models.Model):
+class ComponentModel(models.Model):
     """
     Abstract class that overrides the default `id` primary key with a OneToOne field to the Entity table called `entity_id`.
 
-    Therefore, all EntityModel subclasses share a global entity ID space, enabling fast and powerful new behaviors.
+    Therefore, all ComponentModel subclasses share a global entity ID space, enabling fast and powerful new behaviors.
 
-    Additionally, EntityModel subclasses are soft-deleted by default, and "deleted" objects are excluded from the default Manager.
-    To permanently remove and object and its Entity from the database, specify `obj.delete(hard_delete=True)`.
+    Additionally, ComponentModel subclasses are soft-deleted by default, and "deleted" objects are excluded from the default Manager.
+    To permanently remove a ComponentModel and its Entity from the database, specify `obj.delete(hard_delete=True)`.
 
-    Otherwise, this object behaves like any other base Model subclass.
+    Otherwise, this ComponentModel behaves like any other base Model subclass.
     """
     class Meta:
         abstract = True
@@ -32,9 +31,15 @@ class EntityModel(models.Model):
 
     class Manager(ArchiveManager):
         def get_queryset(self):
-            return super().get_queryset().filter(deleted=False)
+            return super().get_queryset().exclude(deleted=True)
 
     class QuerySet(models.QuerySet):
+        def cast(self, model: "ComponentModel"):
+            """
+            Casts the objects to the specified model, assuming they share an `entity_id`.
+            """
+            return model.objects.filter(entity_id=self.entity_id)
+
         def with_attr(self, domain, key, value):
             """
             Include only entities with the specified Attribute.
@@ -72,12 +77,22 @@ class EntityModel(models.Model):
         default=False,
         editable=False,
         db_index=True,
-        help_text="True indicates the object has been soft-deleted and won't appear in most queries."
+        help_text="True indicates the component has been soft-deleted and won't appear in most queries."
     )
+
+    def cast(self, model: "ComponentModel"):
+        """
+        Casts the object to the specified model, assuming they share an `entity_id`.
+        """
+        return model.objects.get(entity=self.entity)
+
+    @cached_property
+    def content_type(self):
+        return ContentType.objects.get_for_model(type(self))
 
     def add_to_domain(self, domain):
         """
-        Add this object to the specified domain.
+        Add this entity to the specified domain.
         """
         if isinstance(domain, str):
             domain, _ = Domain.objects.get_or_create(slug=domain)
@@ -85,7 +100,7 @@ class EntityModel(models.Model):
 
     def is_in_domain(self, domain, recursive=False):
         """
-        Check whether this object is in the specified domain.
+        Check whether this entity is in the specified domain.
 
         If `recursive=True`, recursively check all subdomains.
         """
@@ -104,7 +119,7 @@ class EntityModel(models.Model):
 
     def remove_from_domain(self, domain):
         """
-        Remove this object to the specified domain, and remove all its Attributes associated with that domain.
+        Remove this entity from the specified domain, and remove all its Attributes associated with that domain.
         """
         if isinstance(domain, str):
             try:
@@ -117,14 +132,14 @@ class EntityModel(models.Model):
 
     def add_attr(self, domain, key, value) -> "Attribute":
         """
-        Add the attribute to this object.
+        Add the attribute to this entity.
         """
         if domain != None:
             if isinstance(domain, str):
                 domain = Domain.objects.get(slug=domain)
             
             if not self.is_in_domain(domain):
-                raise ValueError("cannot assign domain attributes unless the object is part of that domain.")
+                raise ValueError("cannot assign domain attributes unless the entity is part of that domain.")
 
         attr, _ = Attribute.objects.get_or_create(domain=domain, key=key, value=value)
         self.entity.attrs.add(attr)
@@ -132,7 +147,7 @@ class EntityModel(models.Model):
 
     def has_attr(self, domain, key, value) -> bool:
         """
-        Check if this object has the attribute.
+        Check if this entity has the attribute.
         """
         if isinstance(domain, str):
             domain = Domain.objects.get(slug=domain)
@@ -141,7 +156,7 @@ class EntityModel(models.Model):
 
     def remove_attr(self, domain, key, value) -> None:
         """
-        Remove the attribute from this object.
+        Remove the attribute from this entity.
         """
         try:
             if isinstance(domain, str):
@@ -154,19 +169,36 @@ class EntityModel(models.Model):
 
     def attrs_with_key(self, domain, key):
         """
-        Return a QuerySet of attributes on this object with the specified key.
+        Return a QuerySet of attributes on this entity with the specified key.
         """
         return self.entity.attrs.filter(key=key, domain=domain)
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
             if self._state.adding:
-                self.entity = Entity.objects.create(object=self)
+                if not hasattr(self, "entity"):
+                    self.entity = Entity.objects.create()
+                self.entity.content_types.add(self.content_type)
             return super().save(*args, **kwargs)
 
-    def delete(self, hard_delete=False, *args, **kwargs):
+    def delete(self, hard_delete=False, isolated=False, *args, **kwargs):
+        """
+        Soft-deletes the Component, its Entity, and all its Entity's Components, keeping them in the database but marking them deleted, causing the default Manager to exclude them.
+
+        Specify `hard_delete=True` to permanently delete the associated Entity and all its Components.
+
+        Specify `isolated=True` to surgically delete this Component from its Entity without affecting the Entity or its other Components. 
+        """
         self.deleted = True
-        return self.entity.delete(hard_delete=hard_delete)
+        
+        if not isolated:
+            return self.entity.delete(hard_delete=hard_delete)
+        else:
+            if hard_delete:
+                self.entity.content_types.remove(self.content_type)
+                return super().delete(*args, **kwargs)
+            else:
+                self.save()
 
 
 class Entity(models.Model):
@@ -178,7 +210,7 @@ class Entity(models.Model):
 
     class Manager(ArchiveManager):
         def get_queryset(self):
-            return super().get_queryset().filter(deleted_time__isnull=True)
+            return super().get_queryset().exclude(deleted_time__isnull=False)
 
     class QuerySet(models.QuerySet):
         def with_attr(self, key, value, domain=None):
@@ -208,62 +240,60 @@ class Entity(models.Model):
             """
             results = dict()
             if not models:
-                models = {ct.model_class() for ct in ContentType.objects.filter(pk__in=self.values_list("content_type", flat=True).distinct())}
+                models = {ct.model_class() for ct in ContentType.objects.filter(pk__in=self.values_list("content_types", flat=True).distinct())}
             for model in models:
                 ct = ContentType.objects.get_for_model(model)
-                results[model] = model.objects.filter(entity__in=self.filter(content_type=ct))
+                results[model] = model.objects.filter(entity__in=self.filter(content_types=ct))
             return results
-
 
         def all_subdomains(self):
             """
             Recursively replace all Domain entities in the QuerySet with their constituent entities.
             """
-            qs = super().all()
             domain_ct = ContentType.objects.get_for_model(Domain)
-            subdomains = qs.filter(content_type=domain_ct)
-            return qs.exclude(content_type=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
+            subdomains = self.filter(content_types=domain_ct)
+            return self.exclude(content_types=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
 
-
-        def as_graph(self) -> networkx.MultiDiGraph:
-            """
-            Returns a NetworkX graph of entities and their relationships contained in the QuerySet.
-            Entities adjacent to those in the QuerySet may also be included in the graph.
-            Non-entity nodes and their relationships to entities are not included.
-
-            Documentation: https://networkx.org/
-            """
-            graph = networkx.MultiDiGraph()
-            related_entity_fields = dict()
-
-            for entity in self:
-                obj = entity.object
-                if entity.content_type not in related_entity_fields:
-                    # Only use fields that are relations to other EntityModels.
-                    # We only have to do this once per ContentType!
-                    d = {"fk": dict(), "m2m": dict()}
-                    for field in obj._meta.fields:
-                        if (not field.is_relation) or (field.primary_key) or (field.related_model._meta.pk.related_model != Entity):
-                            continue
-                        d["fk"][field.name] = field.verbose_name
-
-                    for m2mfield in obj._meta.local_many_to_many:
-                        if m2mfield.related_model._meta.pk.related_model != Entity:
-                            continue
-                        d["m2m"][m2mfield.name] = m2mfield.verbose_name
-
-                    related_entity_fields[entity.content_type] = d
-                
-                for name, verbose_name in related_entity_fields[entity.content_type]["fk"].items():
-                    target = getattr(obj, name)
-                    if target != None:
-                        graph.add_edge(obj, target, label=verbose_name)
-
-                for name, verbose_name in related_entity_fields[entity.content_type]["m2m"].items():
-                    for target in getattr(obj, name).all():
-                        graph.add_edge(obj, target, label=verbose_name)
-
-            return graph
+#        def as_graph(self) -> networkx.MultiDiGraph:
+#            """
+#            Returns a NetworkX graph of entities and their relationships contained in the QuerySet.
+#            Entities adjacent to those in the QuerySet may also be included in the graph.
+#            Non-entity nodes and their relationships to entities are not included.
+#
+#            Documentation: https://networkx.org/
+#            """
+#            graph = networkx.MultiDiGraph()
+#            related_entity_fields = dict()
+#
+#            for entity in self:
+#                obj = entity.object
+#                for ct in entity.content_types:
+#                    if ct not in related_entity_fields:
+#                        # Only use fields that are relations to other ComponentModels.
+#                        # We only have to do this once per ContentType!
+#                        d = {"fk": dict(), "m2m": dict()}
+#                        for field in obj._meta.fields:
+#                            if (not field.is_relation) or (field.primary_key) or (field.related_model._meta.pk.related_model != Entity):
+#                                continue
+#                            d["fk"][field.name] = field.verbose_name
+#
+#                        for m2mfield in obj._meta.local_many_to_many:
+#                            if m2mfield.related_model._meta.pk.related_model != Entity:
+#                                continue
+#                            d["m2m"][m2mfield.name] = m2mfield.verbose_name
+#
+#                        related_entity_fields[entity.content_type] = d
+#                
+#                for name, verbose_name in related_entity_fields[entity.content_type]["fk"].items():
+#                    target = getattr(obj, name)
+#                    if target != None:
+#                        graph.add_edge(obj, target, label=verbose_name)
+#
+#                for name, verbose_name in related_entity_fields[entity.content_type]["m2m"].items():
+#                    for target in getattr(obj, name).all():
+#                        graph.add_edge(obj, target, label=verbose_name)
+#
+#            return graph
 
     objects = Manager.from_queryset(QuerySet)()
     objects_archive = ArchiveManager.from_queryset(QuerySet)()
@@ -272,13 +302,10 @@ class Entity(models.Model):
         primary_key=True,
     )
 
-    content_type = models.ForeignKey(
+    content_types = models.ManyToManyField(
         ContentType,
-        on_delete=models.RESTRICT,
+        editable=False,
         )
-    object = GenericForeignKey(
-        fk_field='id',
-    )
 
     created_time = models.DateTimeField(
         auto_now_add=True,
@@ -304,21 +331,39 @@ class Entity(models.Model):
         related_name="entities",
     )
 
+    def cast(self, model: ComponentModel):
+        """
+        Return this Entity's component of the specified type.
+        """
+        return model.objects.get(entity=self)
+
+    def components(self):
+        """
+        Returns a dictionary of this Entity's components, mapping the ComponentModel subclass to the instance.
+        """
+        components = dict()
+        for ct in self.content_types.all():
+            model = ct.model_class()
+            components[model] = model.objects.get(entity=self)
+        return components
+
     def delete(self, hard_delete=False, *args, **kwargs):
         if hard_delete:
+            # hard deletes all associated components by CASCADE
             return super().delete(*args, **kwargs)
         elif self.deleted_time == None:
-            self.object.deleted = True
-            self.object.save()
+            for component in self.components().values():
+                component.deleted = True
+                component.save()
             self.deleted_time = timezone.now()
             return self.save()
         else:
             return
 
     def __str__(self):
-        return f"{self.content_type} | {self.object}"
+        return f"{self.id} ({', '.join(str(ct) for ct in self.content_types.all())})"
 
-class Domain(EntityModel):
+class Domain(ComponentModel):
     """
     A set of Entities, which is itself an Entity.
     """
@@ -333,7 +378,7 @@ class Domain(EntityModel):
         return Domain.objects.filter(pk__in=self.entity.domains.all())
 
     def subdomains(self):
-        return Domain.objects.filter(pk__in=self.entities.filter(content_type=ContentType.objects.get_for_model(Domain)))
+        return Domain.objects.filter(pk__in=self.entities.filter(content_types=ContentType.objects.get_for_model(Domain)))
 
     def has_subdomain_recursive(self, subdomain):
         """
