@@ -45,6 +45,10 @@ def user(db):
     return ontology_auth_models.User.objects.create(username="jdoe", email="jdoe@example.com")
 
 @pytest.fixture
+def person_user(db, user):
+    return models.Person.objects.create(entity=user.entity, slug="john_doe")
+
+@pytest.fixture
 def thing(db):
     return models.Thing.objects.create(slug="foobar")
 
@@ -71,28 +75,72 @@ def narrow_policy(db, domain):
         target_attr_strs=["access:exclusive"],
     )
 
+
 def test_fixtures(db, people):
     assert models.Person.objects.count() == 3
+
 
 def test_entity_lifecycle(db, thing):
     assert thing in models.Thing.objects.all()
 
+    # soft-delete by default; still available in the archive Manager
     thing.delete()
     assert thing in models.Thing.objects_archive.all()
     assert thing not in models.Thing.objects.all()
 
+    # soft-delete can be reversed (via Manager)
     models.Thing.objects_archive.undelete()
     assert thing in models.Thing.objects.all()
 
+    # can also soft-delete a queryset
     models.Thing.objects.delete()
     assert thing in models.Thing.objects_archive.all()
     assert thing not in models.Thing.objects.all()
 
+    # hard-delete will permanently remove it from the database
     models.Thing.objects_archive.delete(hard_delete=True)
     assert thing not in models.Thing.objects_archive.all()
-
     with pytest.raises(ontology_models.Entity.DoesNotExist):
         ontology_models.Entity.objects_archive.get(pk=thing.entity_id)
+
+
+def test_entity_composition(db, person_user):
+    # person_user is a Person component with a peer User component
+    entity = person_user.entity
+    user = person_user.cast(ontology_auth_models.User)
+    assert user.username == "jdoe"
+    assert person_user.entity == user.entity
+    assert entity.content_types.count() == 2
+
+    # We can cleanly remove the User component without affecting the Person or Entity
+    user.delete(isolated=True, hard_delete=True)
+    assert entity.content_types.count() == 1
+    with pytest.raises(ontology_auth_models.User.DoesNotExist):
+        with transaction.atomic():
+            person_user.cast(ontology_auth_models.User)
+
+    # We can readd a User component by specifying the PK entity
+    user = ontology_auth_models.User.objects.create(entity=person_user.entity, username="jdoe", email="jdoe@example.com")
+    assert entity.content_types.count() == 2
+    assert user == person_user.cast(ontology_auth_models.User)
+
+    # We can't add a second User component due to User PK conflict
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            ontology_auth_models.User.objects.create(entity=person_user.entity, username="jdoe2", email="jdoe2@example.com")
+
+    # We can also soft-delete the User, which will maintain its references but prevent it from showing up in normal queries
+    user.delete(isolated=True, hard_delete=False)
+    assert ontology_auth_models.User.objects_archive.count() == 1
+    assert ontology_auth_models.User.objects.count() == 0
+    assert entity.content_types.count() == 2
+    with pytest.raises(ontology_auth_models.User.DoesNotExist):
+        with transaction.atomic():
+            person_user.cast(ontology_auth_models.User)
+
+    # If we hard-delete the Person Component, the associated User Component is also permanently deleted.
+    person_user.delete(hard_delete=True)
+    assert ontology_auth_models.User.objects_archive.count() == 0
 
 
 def test_attributes(db, domain, people):
@@ -120,6 +168,7 @@ def test_domains(db, people, domain):
     alice.remove_from_domain(domain)
     assert not alice.has_attr(domain, "role", "researcher")
 
+
 def test_subdomains(db, people):
     alice, bob = people["alice"], people["bob"]
     myproject = ontology_models.Domain.objects.create(slug="myproject")
@@ -144,6 +193,7 @@ def test_subdomains(db, people):
     assert bob.is_in_domain(myproject, recursive=True)
 
 
+@pytest.mark.skip(reason="Must reimplement as_graph()")
 def test_entities_as_graph(db, people, places):
     graph = ontology_models.Entity.objects.as_graph()
     assert len(graph.nodes) == ontology_models.Entity.objects.count()

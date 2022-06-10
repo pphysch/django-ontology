@@ -12,6 +12,7 @@ def on_entity_attribute_change(instance, action, pk_set, **kwargs):
     """
     When an Entity's attributes change, update Entitlements accordingly.
     """
+    print(action, instance, pk_set)
     if action == "post_add":
         if isinstance(instance, models.Entity):
             entities = [instance]
@@ -53,6 +54,7 @@ def on_policy_allow_permissions_change(instance, action, pk_set, **kwargs):
     """
     When a Policy's Permission set changes, update the Entitlements accordingly.
     """
+    print("allow_perms", action, instance, pk_set)
     if action == "post_add":
         if isinstance(instance, models.Policy):
             policies = [instance]
@@ -61,10 +63,13 @@ def on_policy_allow_permissions_change(instance, action, pk_set, **kwargs):
             policies = models.Policy.objects.filter(pk__in=pk_set)
             permissions = [instance]
 
+        print("got here")
         new_entitlements = []
         for policy in policies:
             for permission in permissions:
-                entitlements = policy.entitlements.filter(target__content_type=permission.content_type)
+                print(policy, permission)
+                entitlements = policy.entitlements.filter(target__content_types=permission.content_type)
+                print(policy, permission, entitlements)
                 for d in entitlements.values("source_id", "target_id").distinct():
                     new_entitlements.append(
                         models.Entitlement(
@@ -94,6 +99,7 @@ def on_policy_attrs_change(instance, action, pk_set, **kwargs):
     """
     When a Policy's source or target Attribute sets change, reset the associated Entitlements.
     """
+    print(action, instance, pk_set)
     if action == "post_add" or action == "post_remove":
         if isinstance(instance, models.Policy):
             policies = [instance]
@@ -110,6 +116,7 @@ def on_entity_domain_change(instance, action, pk_set, **kwargs):
     """
     When a Domain gets or loses Entities, update Entitlements accordingly.
     """
+    print(action, instance, pk_set)
     if action == "post_add":
         if isinstance(instance, models.Entity):
             entities = [instance]

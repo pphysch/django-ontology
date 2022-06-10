@@ -1,5 +1,5 @@
 from django.contrib import admin
-from ontology.admin import EntityModelAdmin
+from ontology.admin import ComponentModelAdmin
 
 from . import models
 
@@ -10,14 +10,14 @@ from . import models
 #    inlines = [EntityAdminInline]
 
 @admin.register(models.Person)
-class PersonAdmin(EntityModelAdmin):
+class PersonAdmin(ComponentModelAdmin):
     inlines = []
     pass
 
 @admin.register(models.Place)
-class PlaceAdmin(EntityModelAdmin):
+class PlaceAdmin(ComponentModelAdmin):
     pass
 
 @admin.register(models.Thing)
-class ThingAdmin(EntityModelAdmin):
+class ThingAdmin(ComponentModelAdmin):
     pass
