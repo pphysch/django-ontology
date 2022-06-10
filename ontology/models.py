@@ -115,7 +115,7 @@ class ComponentModel(models.Model):
                 if domain.has_subdomain_recursive(subdomain):
                     return True
 
-        return domain.entities.filter(id=self.entity_id).exists()
+        return self.entity.domains.filter(entity=domain).exists()
 
     def remove_from_domain(self, domain):
         """
