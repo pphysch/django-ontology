@@ -95,8 +95,8 @@ class ComponentModel(models.Model):
         Add this entity to the specified domain.
         """
         if isinstance(domain, str):
-            domain, _ = Domain.objects.get_or_create(slug=domain)
-        return domain.entities.add(self.entity)
+            domain = Domain.objects.get(slug=domain)
+        return self.entity.domains.add(domain)
 
     def is_in_domain(self, domain, recursive=False):
         """
@@ -126,9 +126,10 @@ class ComponentModel(models.Model):
                 domain = Domain.objects.get(slug=domain)
             except Domain.DoesNotExist:
                 return
+
         with transaction.atomic():
             self.entity.attrs.remove(*self.entity.attrs.filter(domain=domain))
-            return domain.entities.remove(self.entity)
+            return self.entity.domains.remove(domain)
 
     def add_attr(self, domain, key, value) -> "Attribute":
         """
@@ -403,10 +404,12 @@ class Domain_Entities(models.Model):
     domain = models.ForeignKey(
         Domain,
         on_delete=models.CASCADE,
+        related_name='+',
     )
     entity = models.ForeignKey(
         Entity,
         on_delete=models.CASCADE,
+        related_name='+',
     )
 
     class Meta:
@@ -423,9 +426,17 @@ def on_domain_entities_m2m_changed(action, instance, pk_set, **kwargs):
     Prevent cycles from forming in the domain graph.
     """
     if action == "pre_add":
-        for domain in Domain.objects.filter(pk__in=pk_set):
-            if domain.has_subdomain_recursive(instance):
-                raise IntegrityError("cycle detected in domain graph!")
+        if isinstance(instance, Domain):
+            superdomains = [instance]
+            subdomains = Domain.objects.filter(pk__in=pk_set)
+        else:
+            superdomains = Domain.objects.filter(pk__in=pk_set)
+            subdomains = Domain.objects.filter(pk=instance)
+
+        for subdomain in subdomains:
+            for superdomain in superdomains:
+                if subdomain.has_subdomain_recursive(superdomain):
+                    raise IntegrityError("cycle detected in domain graph!")
 
 
 class Attribute(models.Model):

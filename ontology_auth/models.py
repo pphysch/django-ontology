@@ -6,7 +6,14 @@ from ontology.models import ComponentModel, Entity, Domain, Attribute
 from django.db import transaction
 
 class User(ComponentModel, AbstractUser):
-    pass
+    class ArchiveManager(ComponentModel.ArchiveManager, UserManager):
+        pass
+
+    class Manager(ComponentModel.Manager, UserManager):
+        pass
+
+    objects = Manager.from_queryset(ComponentModel.QuerySet)()
+    objects_archive = ArchiveManager.from_queryset(ComponentModel.QuerySet)()
 
 
 class Policy(models.Model):
