@@ -104,7 +104,7 @@ class EntityModel(models.Model):
 
     def remove_from_domain(self, domain):
         """
-        Remove this object to the specified domain, and delete all attributes associated with that domain.
+        Remove this object to the specified domain, and remove all its Attributes associated with that domain.
         """
         if isinstance(domain, str):
             try:
