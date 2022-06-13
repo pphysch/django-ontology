@@ -1,6 +1,6 @@
 from django.contrib import admin
-from django.contrib.contenttypes.admin import GenericStackedInline, GenericTabularInline
 from . import models
+from .indirect_inline import IndirectStackedInline
 
 # Register your models here.
 
@@ -11,21 +11,23 @@ class ComponentModelAdmin(admin.ModelAdmin):
             return inlines + [EntityAdminInline]
         return inlines
 
-class EntityAdminInline(GenericStackedInline):
+class EntityAdminInline(IndirectStackedInline):
     model = models.Entity
-    ct_fk_field = "id"
-    extra = 0
+    extra = 3
     autocomplete_fields = ["contacts", "attrs"]
-    readonly_fields = ['id', 'created_time', 'updated_time', 'deleted_time']
+    readonly_fields = ['id', 'content_types', 'created_time', 'updated_time', 'deleted_time']
     fieldsets = (
         (None, {
-            "fields": ('notes', 'attrs')
+            "fields": ('notes', 'attrs', 'content_types')
         }),
         ("Timestamps", {
             "fields": ('created_time', 'updated_time', 'deleted_time'),
             "classes": ('collapse',),
         })
     )
+
+    def get_form_queryset(self, obj):
+        return self.model.objects.filter(id=obj.entity_id)
 
     def has_add_permission(self, request, obj=None):
         return False
