@@ -1,15 +1,15 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import AbstractUser, Permission, BaseUserManager
+from django.contrib.auth.models import AbstractUser, Permission, UserManager
 from ontology.models import ComponentModel, Entity, Domain, Attribute
 from django.db import transaction
 
 class User(ComponentModel, AbstractUser):
-    class ArchiveManager(ComponentModel.ArchiveManager, BaseUserManager):
+    class ArchiveManager(ComponentModel.ArchiveManager, UserManager):
         pass
 
-    class Manager(ComponentModel.Manager, BaseUserManager):
+    class Manager(ComponentModel.Manager, UserManager):
         pass
 
     objects = Manager.from_queryset(ComponentModel.QuerySet)()
