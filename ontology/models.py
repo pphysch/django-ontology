@@ -104,18 +104,20 @@ class ComponentModel(models.Model):
 
         If `recursive=True`, recursively check all subdomains.
         """
-        if isinstance(domain, str):
-            try:
+        try:
+            if isinstance(domain, str):
                 domain = Domain.objects.get(slug=domain)
-            except Domain.DoesNotExist:
-                return False
+            elif isinstance(domain, int):
+                domain = Domain.objects.get(pk=domain)
+        except Domain.DoesNotExist:
+            return False
 
         if recursive:
             for subdomain in self.entity.domains.all():
                 if domain.has_subdomain_recursive(subdomain):
                     return True
 
-        return self.entity.domains.filter(entity=domain).exists()
+        return self.entity.domains.filter(entity_id=domain.id).exists()
 
     def remove_from_domain(self, domain):
         """
