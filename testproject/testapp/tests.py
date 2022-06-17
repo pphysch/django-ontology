@@ -178,13 +178,11 @@ def test_subdomains(db, people):
     mysubsubproject.add_to_domain(mysubproject)
     assert mysubproject in mysubsubproject.superdomains()
 
-    # no subdomain cycles allowed!
-    with pytest.raises(IntegrityError):
-        with transaction.atomic():
-            myproject.add_to_domain(myproject)
-    with pytest.raises(IntegrityError):
-        with transaction.atomic():
-            myproject.add_to_domain(mysubsubproject)
+    # subdomain cycles are automatically prevented
+    myproject.add_to_domain(myproject)
+    assert not myproject.is_in_domain(myproject)
+    myproject.add_to_domain(mysubsubproject)
+    assert not myproject.is_in_domain(mysubsubproject)
 
     alice.add_to_domain(myproject)
     bob.add_to_domain(mysubsubproject)

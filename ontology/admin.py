@@ -14,7 +14,7 @@ class ComponentModelAdmin(admin.ModelAdmin):
 class EntityAdminInline(IndirectStackedInline):
     model = models.Entity
     extra = 3
-    autocomplete_fields = ["contacts", "attrs"]
+    autocomplete_fields = ["attrs"]
     readonly_fields = ['id', 'content_types', 'created_time', 'updated_time', 'deleted_time']
     fieldsets = (
         (None, {
@@ -37,8 +37,9 @@ class EntityAdminInline(IndirectStackedInline):
 
 @admin.register(models.Attribute)
 class AttributeAdmin(admin.ModelAdmin):
-    search_fields = ["key", "value"]
+    search_fields = ["domain__slug", "key", "value"]
 
 @admin.register(models.Domain)
 class DomainAdmin(ComponentModelAdmin):
+    filter_horizontal = ["entities"]
     pass

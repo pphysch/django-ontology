@@ -9,11 +9,12 @@ class User(ComponentModel, AbstractUser):
     class ArchiveManager(ComponentModel.ArchiveManager, UserManager):
         pass
 
-    class Manager(ComponentModel.Manager, UserManager):
-        pass
+    class Manager(ArchiveManager):
+        def get_queryset(self):
+            return super().get_queryset().exclude(deleted=True)
 
-    objects = Manager.from_queryset(ComponentModel.QuerySet)()
-    objects_archive = ArchiveManager.from_queryset(ComponentModel.QuerySet)()
+    objects = Manager()
+    objects_archive = ArchiveManager()
 
 
 class Policy(models.Model):

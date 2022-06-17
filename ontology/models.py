@@ -26,13 +26,6 @@ class ComponentModel(models.Model):
     class Meta:
         abstract = True
 
-    class ArchiveManager(models.Manager):
-        pass
-
-    class Manager(ArchiveManager):
-        def get_queryset(self):
-            return super().get_queryset().exclude(deleted=True)
-
     class QuerySet(models.QuerySet):
         def cast(self, model: "ComponentModel"):
             """
@@ -64,8 +57,15 @@ class ComponentModel(models.Model):
                 self.update(deleted=False)
                 Entity.objects_archive.filter(pk__in=self).update(deleted_time=None)
 
-    objects = Manager.from_queryset(QuerySet)()
-    objects_archive = ArchiveManager.from_queryset(QuerySet)()
+    class ArchiveManager(models.Manager.from_queryset(QuerySet)):
+        use_in_migrations = False  # Not worth the hassle/footguns
+
+    class Manager(ArchiveManager):
+        def get_queryset(self):
+            return super().get_queryset().exclude(deleted=True)
+
+    objects = Manager()
+    objects_archive = ArchiveManager()
 
     entity = models.OneToOneField(
         "ontology.Entity",
@@ -364,7 +364,7 @@ class Entity(models.Model):
             return
 
     def __str__(self):
-        return f"{self.id} ({', '.join(str(ct) for ct in self.content_types.all())})"
+        return f"{self.id} ({', '.join([str(k)+':'+str(v) for k,v in self.components().items()])})"
 
 class Domain(ComponentModel):
     """
@@ -374,7 +374,7 @@ class Domain(ComponentModel):
     entities = models.ManyToManyField(
         Entity,
         related_name="domains",
-        through="Domain_Entities"
+        blank=True,
     )
 
     def superdomains(self):
@@ -399,30 +399,8 @@ class Domain(ComponentModel):
     def __str__(self):
         return self.slug
 
-class Domain_Entities(models.Model):
-    """
-    M2M `through` model for Domain.entities
-    """
-    domain = models.ForeignKey(
-        Domain,
-        on_delete=models.CASCADE,
-        related_name='+',
-    )
-    entity = models.ForeignKey(
-        Entity,
-        on_delete=models.CASCADE,
-        related_name='+',
-    )
 
-    class Meta:
-        constraints = [
-            models.CheckConstraint(
-                check=~models.Q(domain_id=models.F("entity_id")),
-                name="%(app_label)s_%(class)s_no_self_reference"
-            )
-        ]
-
-@receiver(models.signals.m2m_changed, sender=Domain_Entities)
+@receiver(models.signals.m2m_changed, sender=Domain.entities.through)
 def on_domain_entities_m2m_changed(action, instance, pk_set, **kwargs):
     """
     Prevent cycles from forming in the domain graph.
@@ -438,7 +416,8 @@ def on_domain_entities_m2m_changed(action, instance, pk_set, **kwargs):
         for subdomain in subdomains:
             for superdomain in superdomains:
                 if subdomain.has_subdomain_recursive(superdomain):
-                    raise IntegrityError("cycle detected in domain graph!")
+                    pk_set.remove(superdomain.pk)
+                    logger.warning(f"prevented a subdomain cycle between {superdomain} and {subdomain}")
 
 
 class Attribute(models.Model):
