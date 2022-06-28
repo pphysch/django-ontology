@@ -263,46 +263,6 @@ class Entity(models.Model):
             subdomains = self.filter(content_types=domain_ct)
             return self.exclude(content_types=domain_ct).union(*[subdomain.object.entities.all_subdomains() for subdomain in subdomains])
 
-#        def as_graph(self) -> networkx.MultiDiGraph:
-#            """
-#            Returns a NetworkX graph of entities and their relationships contained in the QuerySet.
-#            Entities adjacent to those in the QuerySet may also be included in the graph.
-#            Non-entity nodes and their relationships to entities are not included.
-#
-#            Documentation: https://networkx.org/
-#            """
-#            graph = networkx.MultiDiGraph()
-#            related_entity_fields = dict()
-#
-#            for entity in self:
-#                obj = entity.object
-#                for ct in entity.content_types:
-#                    if ct not in related_entity_fields:
-#                        # Only use fields that are relations to other ComponentModels.
-#                        # We only have to do this once per ContentType!
-#                        d = {"fk": dict(), "m2m": dict()}
-#                        for field in obj._meta.fields:
-#                            if (not field.is_relation) or (field.primary_key) or (field.related_model._meta.pk.related_model != Entity):
-#                                continue
-#                            d["fk"][field.name] = field.verbose_name
-#
-#                        for m2mfield in obj._meta.local_many_to_many:
-#                            if m2mfield.related_model._meta.pk.related_model != Entity:
-#                                continue
-#                            d["m2m"][m2mfield.name] = m2mfield.verbose_name
-#
-#                        related_entity_fields[entity.content_type] = d
-#                
-#                for name, verbose_name in related_entity_fields[entity.content_type]["fk"].items():
-#                    target = getattr(obj, name)
-#                    if target != None:
-#                        graph.add_edge(obj, target, label=verbose_name)
-#
-#                for name, verbose_name in related_entity_fields[entity.content_type]["m2m"].items():
-#                    for target in getattr(obj, name).all():
-#                        graph.add_edge(obj, target, label=verbose_name)
-#
-#            return graph
 
     objects = Manager.from_queryset(QuerySet)()
     objects_archive = ArchiveManager.from_queryset(QuerySet)()
@@ -434,8 +394,6 @@ class Attribute(models.Model):
     domain = models.ForeignKey(
         Domain,
         on_delete=models.CASCADE,
-        null=True,
-        blank=True,
     )
     key = models.SlugField()
     value = models.CharField(max_length=255)
