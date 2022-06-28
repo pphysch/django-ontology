@@ -37,6 +37,9 @@ class ComponentModel(models.Model):
             """
             Include only entities with the specified Attribute.
             """
+            if isinstance(domain, str):
+                domain = Domain.objects.get(slug=domain)
+
             return self.filter(entity__attrs__domain=domain, entity__attrs__key=key, entity__attrs__value=value)
 
         def delete(self, hard_delete=False):
@@ -96,6 +99,7 @@ class ComponentModel(models.Model):
         """
         if isinstance(domain, str):
             domain = Domain.objects.get(slug=domain)
+
         return self.entity.domains.add(domain)
 
     def is_in_domain(self, domain, recursive=False):
@@ -124,10 +128,7 @@ class ComponentModel(models.Model):
         Remove this entity from the specified domain, and remove all its Attributes associated with that domain.
         """
         if isinstance(domain, str):
-            try:
-                domain = Domain.objects.get(slug=domain)
-            except Domain.DoesNotExist:
-                return
+            domain = Domain.objects.get(slug=domain)
 
         with transaction.atomic():
             self.entity.attrs.remove(*self.entity.attrs.filter(domain=domain))
@@ -137,12 +138,11 @@ class ComponentModel(models.Model):
         """
         Add the attribute to this entity.
         """
-        if domain != None:
-            if isinstance(domain, str):
-                domain = Domain.objects.get(slug=domain)
-            
-            if not self.is_in_domain(domain):
-                raise ValueError("cannot assign domain attributes unless the entity is part of that domain.")
+        if isinstance(domain, str):
+            domain = Domain.objects.get(slug=domain)
+        
+        if not self.is_in_domain(domain):
+            raise ValueError("cannot assign domain attributes unless the entity is part of that domain.")
 
         attr, _ = Attribute.objects.get_or_create(domain=domain, key=key, value=value)
         self.entity.attrs.add(attr)
@@ -174,6 +174,9 @@ class ComponentModel(models.Model):
         """
         Return a QuerySet of attributes on this entity with the specified key.
         """
+        if isinstance(domain, str):
+            domain = Domain.objects.get(slug=domain)
+
         return self.entity.attrs.filter(key=key, domain=domain)
 
     def save(self, *args, **kwargs):
@@ -216,10 +219,13 @@ class Entity(models.Model):
             return super().get_queryset().exclude(deleted_time__isnull=False)
 
     class QuerySet(models.QuerySet):
-        def with_attr(self, key, value, domain=None):
+        def with_attr(self, domain, key, value):
             """
             Include only entities with the specified Attribute.
             """
+            if isinstance(domain, str):
+                domain = Domain.objects.get(slug=domain)
+
             return self.filter(attrs__domain=domain, attrs__key=key, attrs__value=value)
 
         def delete(self, hard_delete=False):

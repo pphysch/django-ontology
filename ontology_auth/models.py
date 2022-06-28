@@ -20,6 +20,9 @@ class User(ComponentModel, AbstractUser):
 class Policy(models.Model):
     class Manager(models.Manager):
         def create_from_strs(self, domain, label, source_attr_strs=(), perm_strs=(), target_attr_strs=()):
+            if isinstance(domain, str):
+                domain = Domain.objects.get(slug=domain)
+                
             source_attrs = set()
             for s in source_attr_strs:
                 tokens = s.split(':')
